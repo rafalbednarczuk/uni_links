@@ -1,5 +1,6 @@
 package name.avioli.unilinks;
 
+import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -17,10 +18,10 @@ import io.flutter.plugin.common.PluginRegistry;
 
 public class UniLinksPlugin
         implements FlutterPlugin,
-                MethodChannel.MethodCallHandler,
-                EventChannel.StreamHandler,
-                ActivityAware,
-                PluginRegistry.NewIntentListener {
+        MethodChannel.MethodCallHandler,
+        EventChannel.StreamHandler,
+        ActivityAware,
+        PluginRegistry.NewIntentListener {
 
     private static final String MESSAGES_CHANNEL = "uni_links/messages";
     private static final String EVENTS_CHANNEL = "uni_links/events";
@@ -30,6 +31,7 @@ public class UniLinksPlugin
     private String initialLink;
     private String latestLink;
     private Context context;
+    private Activity mainActivity;
     private boolean initialIntent = true;
 
     private void handleIntent(Context context, Intent intent) {
@@ -80,7 +82,9 @@ public class UniLinksPlugin
         eventChannel.setStreamHandler(plugin);
     }
 
-    /** Plugin registration. */
+    /**
+     * Plugin registration.
+     */
     public static void registerWith(@NonNull PluginRegistry.Registrar registrar) {
         // Detect if we've been launched in background
         if (registrar.activity() == null) {
@@ -89,14 +93,20 @@ public class UniLinksPlugin
 
         final UniLinksPlugin instance = new UniLinksPlugin();
         instance.context = registrar.context();
+        instance.setActivity(registrar.activity());
         register(registrar.messenger(), instance);
 
         instance.handleIntent(registrar.context(), registrar.activity().getIntent());
         registrar.addNewIntentListener(instance);
     }
 
+    private void setActivity(Activity flutterActivity) {
+        this.mainActivity = flutterActivity;
+    }
+
     @Override
-    public void onDetachedFromEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {}
+    public void onDetachedFromEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
+    }
 
     @Override
     public void onListen(Object o, EventChannel.EventSink eventSink) {
@@ -110,13 +120,23 @@ public class UniLinksPlugin
 
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
+        Intent intent = mainActivity.getIntent();
+
         if (call.method.equals("getInitialLink")) {
-            result.success(initialLink);
+            if (mainActivity != null && !launchedActivityFromHistory(intent)) {
+                result.success(initialLink);
+            } else {
+                result.success(null);
+            }
         } else if (call.method.equals("getLatestLink")) {
             result.success(latestLink);
         } else {
             result.notImplemented();
         }
+    }
+
+    private boolean launchedActivityFromHistory(Intent intent) {
+        return intent != null && (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY;
     }
 
     @Override
@@ -127,20 +147,26 @@ public class UniLinksPlugin
 
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding activityPluginBinding) {
+        setActivity(activityPluginBinding.getActivity());
         activityPluginBinding.addOnNewIntentListener(this);
         this.handleIntent(this.context, activityPluginBinding.getActivity().getIntent());
     }
 
     @Override
-    public void onDetachedFromActivityForConfigChanges() {}
+    public void onDetachedFromActivityForConfigChanges() {
+        setActivity(null);
+    }
 
     @Override
     public void onReattachedToActivityForConfigChanges(
             @NonNull ActivityPluginBinding activityPluginBinding) {
+        setActivity(activityPluginBinding.getActivity());
         activityPluginBinding.addOnNewIntentListener(this);
         this.handleIntent(this.context, activityPluginBinding.getActivity().getIntent());
     }
 
     @Override
-    public void onDetachedFromActivity() {}
+    public void onDetachedFromActivity() {
+        setActivity(null);
+    }
 }
